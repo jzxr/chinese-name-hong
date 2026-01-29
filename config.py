@@ -32,7 +32,17 @@ DESTINY_MEANINGS = {
         "zh": "（吉）做事一帆風順，智勇雙全必能有所成就。女性則不要虛榮則吉，可助夫益子而使家業興隆。",
         "en": "(Auspicious) Endeavors proceed smoothly; with wisdom and courage, achievement is assured. "
               "For women: avoid vanity for better fortune; supports spouse and children, prospering the family estate."
-    }
+    },
+    52: {
+        "zh": "（吉）有先⾒之明⽽能成功的建業，並且能⼀⼼⼀意的努⼒⽽使得名利雙收。女性則富貴清雅，並且溫和賢良⽽助夫興家。",
+        "en": "(Auspicious) Endowed with foresight and the ability to build a successful career. Through wholehearted dedication and effort, both fame and wealth can be attained."
+        "For women, this signifies elegance and prosperity, with a gentle and virtuous nature that supports the spouse and helps the family flourish."
+    },
+    65: {
+        "zh": "（吉）富貴榮昌，事事如意，身體健壯，名利雙收。女性溫柔，能助夫興家。",
+        "en": "(Auspicious) Prosperity and honor flourish, with everything going smoothly. Strong health leads to success and a well-established reputation. "
+        "For women, this signifies a gentle nature and the ability to support the spouse and help the family prosper."
+    },
 }
 
 PATTERN_MEANINGS = {
@@ -43,23 +53,17 @@ PATTERN_MEANINGS = {
     "木木土": {
         "en": "A steady temperament and solid fortune; health, happiness, and longevity. Be forgiving with others.",
         "zh": "性情穩健，境遇堅固，身心健康而幸福長壽；與人相處宜寬恕。"
-    },
-    "木土火": {
-        "en": "Strong interpersonal harmony; a sound foundation supports successful growth and advancement.",
-        "zh": "有人緣，基礎運健全，能成功發展。"
     }
 }
 
 REQUESTED_COMBOS = {
-    "木木木": [(11, 10), (1, 20), (11, 20), (21, 10)],
-    "木木土": [(21, 14), (1, 5), (11, 24)],
-    "木火土": [(3, 12), (13, 2)],
+    "木木木": [(11, 10), (1, 20), (11, 20), (21, 10), (21, 21)],
+    "木木土": [(21, 14), (1, 5), (11, 24), (11, 4), (21, 34), (31, 24)],
 }
 
 PATTERN_TOTAL_FILTERS = {
-    "木木木": {31, 41},
-    "木木土": {16, 45},
-    "木火土": {25}
+    "木木木": {31, 41, 52},
+    "木木土": {16, 25, 45}
 }
 
 ELEMENT_COLORS = {
