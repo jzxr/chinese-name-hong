@@ -20,6 +20,34 @@ def element_badge(element: str) -> str:
     color = ELEMENT_COLORS.get(element, "#333333")
     return f"<span style='color:{color}; font-weight:700;'>{element}</span>"
 
+def zodiac_badge(status: str, matched: str = "") -> str:
+    """
+    status: 吉 | 凶 | neutral
+    matched: which component matched (e.g. 艹 / 火)
+    """
+    if status == "凶":
+        return f"<span style='background:#ffebee;color:#c62828;padding:2px 8px;border-radius:999px;font-weight:700;'>凶</span> <span style='color:#c62828;'>({matched})</span>"
+    if status == "吉":
+        return f"<span style='background:#e8f5e9;color:#2e7d32;padding:2px 8px;border-radius:999px;font-weight:700;'>吉</span> <span style='color:#2e7d32;'>({matched})</span>"
+    return "<span style='background:#eeeeee;color:#555;padding:2px 8px;border-radius:999px;font-weight:700;'>—</span>"
+
+def horse_row_status(row: dict) -> str:
+    """
+    Returns: "吉" | "凶" | "neutral"
+    Rule:
+      - If any character is 凶 -> overall 凶
+      - Else if any character is 吉 -> overall 吉
+      - Else neutral
+    """
+    checks = row.get("ZodiacHorseCheck", []) or []
+    statuses = [c.get("status") for c in checks]
+
+    if "凶" in statuses:
+        return "凶"
+    if "吉" in statuses:
+        return "吉"
+    return "neutral"
+
 @st.cache_data(show_spinner=False)
 def load_db_cached(path: str):
     return load_db_raw(path)
@@ -107,11 +135,16 @@ lang = st.sidebar.radio("Meaning Language", ["English", "Chinese", "Both"], 0)
 show_destiny = st.sidebar.toggle("Show destiny meaning (總格數理)", value=True)
 limit = st.sidebar.slider("Max cards to show", 10, 5000, 500, step=20)
 search = st.sidebar.text_input("Search (Name / Pinyin)", "")
+horse_filter = st.sidebar.radio(
+    "🐴 Horse Year (午年/馬年) Filter",
+    ["All", "吉 only", "凶 only", "Exclude 凶"],
+    index=0
+)
 
 selected_patterns = st.sidebar.multiselect(
     "Select patterns",
-    options=list({"木木木", "木木土", "木火土"}),  # UI only: options list
-    default=list({"木木木", "木木土", "木火土"})
+    options=list({"木木木", "木木土"}),  # UI only: options list
+    default=list({"木木木", "木木土"})
 )
 
 # Generate rows using logic module
@@ -129,6 +162,20 @@ if search.strip():
         df["Name"].astype(str).str.lower().str.contains(q) |
         df["Pinyin"].astype(str).str.lower().str.contains(q)
     ]
+
+# Horse year filter
+if horse_filter != "All":
+    # compute overall status per row
+    df["_horse_status"] = df.apply(lambda r: horse_row_status(r.to_dict()), axis=1)
+
+    if horse_filter == "吉 only":
+        df = df[df["_horse_status"] == "吉"]
+    elif horse_filter == "凶 only":
+        df = df[df["_horse_status"] == "凶"]
+    elif horse_filter == "Exclude 凶":
+        df = df[df["_horse_status"] != "凶"]
+
+    df = df.drop(columns=["_horse_status"], errors="ignore")
 
 # Summary
 c1, c2, c3 = st.columns([1.2, 1, 1])
@@ -247,12 +294,18 @@ for r in df.head(limit).to_dict(orient="records"):
         st.divider()
         st.markdown("### 🔤 Character Details（每個字：拼音・筆畫・五行・含義）")
 
-        for ch in r["CharDetails"]:
+        zodiac_checks = r.get("ZodiacHorseCheck", [])
+
+        for idx, ch in enumerate(r["CharDetails"]):
+            z = zodiac_checks[idx] if idx < len(zodiac_checks) else {"status": "neutral", "matched": ""}
+
             st.markdown(
                 f"**{ch.get('char','')}** · *{ch.get('pinyin','')}* · {ch.get('strokes','')} strokes · "
-                f"Element: {element_badge(ch.get('element',''))}",
+                f"Element: {element_badge(ch.get('element',''))}  "
+                f"马年: {zodiac_badge(z.get('status','neutral'), z.get('matched',''))}",
                 unsafe_allow_html=True
             )
+
             if lang == "English":
                 st.write(f"English: {ch.get('meaning_en','') or '—'}")
             elif lang == "Chinese":
@@ -260,6 +313,7 @@ for r in df.head(limit).to_dict(orient="records"):
             else:
                 st.write(f"English: {ch.get('meaning_en','') or '—'}")
                 st.write(f"中文: {ch.get('meaning_zh','') or '—'}")
+
             st.write("")
 
 # ============================================================

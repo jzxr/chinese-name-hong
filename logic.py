@@ -1,7 +1,7 @@
 from openpyxl import load_workbook
 from itertools import product
 from typing import Dict, List, Tuple, Any, Optional
-
+from rules.zodiac_rules import check_horse_year_char
 from config import (
     FIRST_CHAR, DESTINY_MEANINGS, PATTERN_MEANINGS,
     REQUESTED_COMBOS, PATTERN_TOTAL_FILTERS
@@ -52,6 +52,14 @@ def allowed_destiny_total(pattern_key: str, destiny_total: int) -> bool:
 def load_db_raw(excel_path: str):
     """
     Raw loader (NO streamlit caching here).
+    Excel columns:
+      row[0]=char
+      row[1]=pinyin
+      row[2]=strokes
+      row[3]=element
+      row[4]=horse_rule (NEW)
+      row[5]=EN meaning  (shifted)
+      row[6]=ZH meaning  (shifted)
     Return: db, by_strokes, by_char
     """
     wb = load_workbook(excel_path)
@@ -64,14 +72,18 @@ def load_db_raw(excel_path: str):
             pinyin = row[1]
             strokes = int(row[2])
             element = row[3]
-            meaning_en = row[4] if len(row) > 4 else ""
-            meaning_zh = row[5] if len(row) > 5 else ""
+
+            horse_rule = row[4] if len(row) > 4 else ""       
+            meaning_en = row[5] if len(row) > 5 else ""         
+            meaning_zh = row[6] if len(row) > 6 else ""          
+
             if char and pinyin and strokes and element is not None:
                 db.append({
                     "char": char,
                     "pinyin": pinyin,
                     "strokes": strokes,
                     "element": element,
+                    "horse_rule": horse_rule or "",           
                     "meaning_en": meaning_en or "",
                     "meaning_zh": meaning_zh or ""
                 })
@@ -112,9 +124,22 @@ def make_row(requested_pattern_key: str, second: dict, third: dict, by_char: dic
         "pinyin": FIRST_CHAR["pinyin"],
         "strokes": FIRST_CHAR["strokes"],
         "element": FIRST_CHAR["element"],
+        "horse_rule": "",
         "meaning_en": "",
         "meaning_zh": ""
     })
+
+    char_details = [first_info, second, third]
+    zodiac_checks = []
+
+    for ch in char_details:
+        res = check_horse_year_char(ch.get("horse_rule", ""))
+
+        zodiac_checks.append({
+            "char": ch.get("char", ""),
+            "status": res["status"],
+            "matched": res["matched"],
+        })
 
     return {
         "PatternRequested": requested_pattern_key,
@@ -130,6 +155,7 @@ def make_row(requested_pattern_key: str, second: dict, third: dict, by_char: dic
         "PatternMeaning_EN": PATTERN_MEANINGS.get(computed_pattern, {}).get("en", ""),
         "PatternMeaning_ZH": PATTERN_MEANINGS.get(computed_pattern, {}).get("zh", ""),
         "CharDetails": [first_info, second, third],
+        "ZodiacHorseCheck": zodiac_checks,
     }
 
 def generate_rows(by_strokes: dict, by_char: dict, selected_patterns: List[str]) -> List[dict]:
