@@ -98,7 +98,13 @@ def load_db_raw(excel_path: str):
 
     return db, by_strokes, by_char
 
-def make_row(requested_pattern_key: str, second: dict, third: dict, by_char: dict) -> Optional[dict]:
+def make_row(
+    requested_pattern_key: str,
+    second: dict,
+    third: dict,
+    by_char: dict,
+    require_second_third_ji: bool = False,  
+) -> Optional[dict]:
     first = FIRST_CHAR["strokes"]
     s2 = second["strokes"]
     s3 = third["strokes"]
@@ -109,8 +115,6 @@ def make_row(requested_pattern_key: str, second: dict, third: dict, by_char: dic
 
     pat = compute_pattern_elements(first, s2, s3)
     computed_pattern = pat["elements"]
-
-    # STRICT pattern match
     if computed_pattern != requested_pattern_key:
         return None
 
@@ -124,22 +128,29 @@ def make_row(requested_pattern_key: str, second: dict, third: dict, by_char: dic
         "pinyin": FIRST_CHAR["pinyin"],
         "strokes": FIRST_CHAR["strokes"],
         "element": FIRST_CHAR["element"],
-        "horse_rule": "",
         "meaning_en": "",
-        "meaning_zh": ""
+        "meaning_zh": "",
+        "horse_rule": "",  # keep safe default
     })
 
     char_details = [first_info, second, third]
-    zodiac_checks = []
 
+    # ✅ horse check uses EXCEL row[4] stored as "horse_rule"
+    zodiac_checks = []
     for ch in char_details:
         res = check_horse_year_char(ch.get("horse_rule", ""))
-
         zodiac_checks.append({
             "char": ch.get("char", ""),
-            "status": res["status"],
+            "status": res["status"],     # 吉 / 凶 / neutral
             "matched": res["matched"],
         })
+
+    # ✅ FILTER: require 2nd and 3rd to be 吉
+    if require_second_third_ji:
+        second_status = zodiac_checks[1]["status"]
+        third_status = zodiac_checks[2]["status"]
+        if second_status != "吉" or third_status != "吉":
+            return None
 
     return {
         "PatternRequested": requested_pattern_key,
@@ -154,11 +165,16 @@ def make_row(requested_pattern_key: str, second: dict, third: dict, by_char: dic
         "DestinyMeaning_ZH": DESTINY_MEANINGS.get(destiny_total, {}).get("zh", "（未定義）"),
         "PatternMeaning_EN": PATTERN_MEANINGS.get(computed_pattern, {}).get("en", ""),
         "PatternMeaning_ZH": PATTERN_MEANINGS.get(computed_pattern, {}).get("zh", ""),
-        "CharDetails": [first_info, second, third],
+        "CharDetails": char_details,
         "ZodiacHorseCheck": zodiac_checks,
     }
 
-def generate_rows(by_strokes: dict, by_char: dict, selected_patterns: List[str]) -> List[dict]:
+def generate_rows(
+    by_strokes: dict,
+    by_char: dict,
+    selected_patterns: List[str],
+    require_second_third_ji: bool = False,  # ✅ NEW
+) -> List[dict]:
     rows = []
     for pattern_key in selected_patterns:
         for s2, s3 in REQUESTED_COMBOS.get(pattern_key, []):
@@ -166,8 +182,16 @@ def generate_rows(by_strokes: dict, by_char: dict, selected_patterns: List[str])
             thirds = by_strokes.get(s3, [])
             if not seconds or not thirds:
                 continue
+
             for second, third in product(seconds, thirds):
-                r = make_row(pattern_key, second, third, by_char)
+                r = make_row(
+                    pattern_key,
+                    second,
+                    third,
+                    by_char,
+                    require_second_third_ji=require_second_third_ji,  # ✅ pass through
+                )
                 if r:
                     rows.append(r)
     return rows
+

@@ -140,6 +140,14 @@ horse_filter = st.sidebar.radio(
     ["All", "吉 only", "凶 only", "Exclude 凶"],
     index=0
 )
+st.sidebar.subheader("Zodiac Filter (馬年用字)")
+zodiac_filter = st.sidebar.radio(
+    "Second & third character must be 吉?",
+    ["No filter", "Require 吉 for 2nd & 3rd"],
+    index=0
+)
+
+require_second_third_ji = (zodiac_filter == "Require 吉 for 2nd & 3rd")
 
 selected_patterns = st.sidebar.multiselect(
     "Select patterns",
@@ -148,7 +156,8 @@ selected_patterns = st.sidebar.multiselect(
 )
 
 # Generate rows using logic module
-rows = generate_rows(by_strokes, by_char, selected_patterns)
+rows = generate_rows(by_strokes, by_char, selected_patterns, require_second_third_ji=require_second_third_ji)
+
 df = pd.DataFrame(rows)
 df = df.drop_duplicates(subset=["Name", "Pinyin", "PatternComputed", "DestinyTotal"]).reset_index(drop=True)
 
