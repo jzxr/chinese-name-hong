@@ -21,3 +21,5 @@ Thumbs.db
 
 # Logs
 *.log
+Name book.pdf
+*.pdf # optional if you want to ignore all PDFs
