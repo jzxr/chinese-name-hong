@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 
-from config import EXCEL_PATH, ELEMENT_COLORS, FIVE_GRID_TIPS
+from config import EXCEL_PATH, ELEMENT_COLORS, FIVE_GRID_TIPS, ZODIAC_OPTIONS
 from logic import load_db_raw, generate_rows
 from pdf_export import generate_pdf
 
@@ -135,19 +135,22 @@ lang = st.sidebar.radio("Meaning Language", ["English", "Chinese", "Both"], 0)
 show_destiny = st.sidebar.toggle("Show destiny meaning (總格數理)", value=True)
 limit = st.sidebar.slider("Max cards to show", 10, 5000, 500, step=20)
 search = st.sidebar.text_input("Search (Name / Pinyin)", "")
-horse_filter = st.sidebar.radio(
-    "🐴 Horse Year (午年/馬年) Filter",
-    ["All", "吉 only", "凶 only", "Exclude 凶"],
-    index=0
-)
-st.sidebar.subheader("Zodiac Filter (馬年用字)")
-zodiac_filter = st.sidebar.radio(
-    "Second & third character must be 吉?",
-    ["No filter", "Require 吉 for 2nd & 3rd"],
-    index=0
-)
 
-require_second_third_ji = (zodiac_filter == "Require 吉 for 2nd & 3rd")
+# One zodiac selector (covers horse / monkey / chicken / pig / etc.)
+zodiac_name = st.sidebar.selectbox("Select Zodiac Rule", ZODIAC_OPTIONS, index=0)
+
+zodiac_filter_mode = "OFF"
+if zodiac_name != "None":
+    zodiac_filter_mode_ui = st.sidebar.radio(
+        "2nd + 3rd character filter",
+        ["OFF", "EXCLUDE 凶 (recommended)", "REQUIRE 吉 (strict)"],
+        index=1
+    )
+    zodiac_filter_mode = {
+        "OFF": "OFF",
+        "EXCLUDE 凶 (recommended)": "EXCLUDE_XIONG",
+        "REQUIRE 吉 (strict)": "REQUIRE_JI",
+    }[zodiac_filter_mode_ui]
 
 selected_patterns = st.sidebar.multiselect(
     "Select patterns",
@@ -156,11 +159,15 @@ selected_patterns = st.sidebar.multiselect(
 )
 
 # Generate rows using logic module
-rows = generate_rows(by_strokes, by_char, selected_patterns, require_second_third_ji=require_second_third_ji)
+rows = generate_rows(by_strokes, by_char, selected_patterns, zodiac_name=zodiac_name, zodiac_filter_mode=zodiac_filter_mode)
 
 df = pd.DataFrame(rows)
 df = df.drop_duplicates(subset=["Name", "Pinyin", "PatternComputed", "DestinyTotal"]).reset_index(drop=True)
-
+df["_c1"] = df["Name"].str[0]
+df["_c2"] = df["Name"].str[1]
+df["_c3"] = df["Name"].str[2]
+df = df.sort_values(by=["_c1", "_c2", "_c3"])
+df = df.drop(columns=["_c1", "_c2", "_c3"]).reset_index(drop=True)
 if df.empty:
     st.warning("No results found. Check Excel strokes availability, requested tuples, pattern filters, or destiny total filters.")
     st.stop()
@@ -171,20 +178,6 @@ if search.strip():
         df["Name"].astype(str).str.lower().str.contains(q) |
         df["Pinyin"].astype(str).str.lower().str.contains(q)
     ]
-
-# Horse year filter
-if horse_filter != "All":
-    # compute overall status per row
-    df["_horse_status"] = df.apply(lambda r: horse_row_status(r.to_dict()), axis=1)
-
-    if horse_filter == "吉 only":
-        df = df[df["_horse_status"] == "吉"]
-    elif horse_filter == "凶 only":
-        df = df[df["_horse_status"] == "凶"]
-    elif horse_filter == "Exclude 凶":
-        df = df[df["_horse_status"] != "凶"]
-
-    df = df.drop(columns=["_horse_status"], errors="ignore")
 
 # Summary
 c1, c2, c3 = st.columns([1.2, 1, 1])
@@ -303,15 +296,26 @@ for r in df.head(limit).to_dict(orient="records"):
         st.divider()
         st.markdown("### 🔤 Character Details（每個字：拼音・筆畫・五行・含義）")
 
-        zodiac_checks = r.get("ZodiacHorseCheck", [])
+        if zodiac_name != "None":
+            z = r.get("ZodiacCheck", {}) or {}
+            checks = z.get("checks") or []
+            if len(checks) >= 3:
+                c2 = checks[1]  # 2nd char
+                c3 = checks[2]  # 3rd char
+
+        zodiac_checks = (r.get("ZodiacCheck", {}) or {}).get("checks", [])
 
         for idx, ch in enumerate(r["CharDetails"]):
             z = zodiac_checks[idx] if idx < len(zodiac_checks) else {"status": "neutral", "matched": ""}
 
             st.markdown(
                 f"**{ch.get('char','')}** · *{ch.get('pinyin','')}* · {ch.get('strokes','')} strokes · "
-                f"Element: {element_badge(ch.get('element',''))}  "
-                f"马年: {zodiac_badge(z.get('status','neutral'), z.get('matched',''))}",
+                f"Element: {element_badge(ch.get('element',''))} · 马年:",
+                unsafe_allow_html=True
+            )
+
+            st.markdown(
+                zodiac_badge(z.get("status", "neutral"), z.get("matched", "")),
                 unsafe_allow_html=True
             )
 
