@@ -2,8 +2,7 @@ import streamlit as st
 import pandas as pd
 
 from config import EXCEL_PATH, ELEMENT_COLORS, FIVE_GRID_TIPS, ZODIAC_OPTIONS
-from logic import generate_rows_cached, load_db_raw, generate_rows
-from pdf_export import generate_pdf
+from logic import generate_rows_cached, load_db_raw
 
 # ============================================================
 # UI HELPERS
