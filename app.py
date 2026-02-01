@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 
 from config import EXCEL_PATH, ELEMENT_COLORS, FIVE_GRID_TIPS, ZODIAC_OPTIONS
-from logic import load_db_raw, generate_rows
+from logic import generate_rows_cached, load_db_raw, generate_rows
 from pdf_export import generate_pdf
 
 # ============================================================
@@ -47,6 +47,39 @@ def horse_row_status(row: dict) -> str:
     if "吉" in statuses:
         return "吉"
     return "neutral"
+def render_pagination_bar(total: int, page_size: int, key_prefix: str = "pg"):
+    total_pages = max(1, (total + page_size - 1) // page_size)
+
+    # init + clamp
+    if "page" not in st.session_state:
+        st.session_state.page = 1
+    st.session_state.page = max(1, min(int(st.session_state.page), total_pages))
+
+    start = (st.session_state.page - 1) * page_size
+    end = min(start + page_size, total)
+
+    c1, c2, c3 = st.columns([1, 3, 1])
+
+    with c1:
+        if st.button("⬅ Previous", key=f"{key_prefix}_prev", disabled=(st.session_state.page <= 1)):
+            st.session_state.page -= 1
+            st.rerun()
+
+    with c2:
+        if total == 0:
+            st.markdown("No results.")
+        else:
+            st.markdown(
+                f"Showing **{start+1}–{end}** of **{total}** · "
+                f"Page **{st.session_state.page}/{total_pages}**"
+            )
+
+    with c3:
+        if st.button("Next ➡", key=f"{key_prefix}_next", disabled=(st.session_state.page >= total_pages)):
+            st.session_state.page += 1
+            st.rerun()
+
+    return start, end
 
 @st.cache_data(show_spinner=False)
 def load_db_cached(path: str):
@@ -74,6 +107,9 @@ def clear_favorites():
 # ============================================================
 ensure_state()
 
+if "_btn_counter" not in st.session_state:
+    st.session_state["_btn_counter"] = 0
+    
 st.set_page_config(page_title="（洪）Professional Name Generator", layout="wide")
 st.title("🔮（洪）Professional Chinese Name Generator")
 st.caption("✅ 第二/第三字只依筆畫配對（不需符合Excel五行）｜✅ 組合五行依 +1 規則｜✅ 總格數理不加 +1")
@@ -133,7 +169,8 @@ db, by_strokes, by_char = load_db_cached(EXCEL_PATH)
 st.sidebar.header("Controls")
 lang = st.sidebar.radio("Meaning Language", ["English", "Chinese", "Both"], 0)
 show_destiny = st.sidebar.toggle("Show destiny meaning (總格數理)", value=True)
-limit = st.sidebar.slider("Max cards to show", 10, 5000, 500, step=20)
+page_size = st.sidebar.selectbox("Cards per page", [100, 400, 800], index=1)
+max_generate = st.sidebar.slider("Max results to generate (perf)", 500, 20000, 5000, step=500)
 search = st.sidebar.text_input("Search (Name / Pinyin)", "")
 
 # One zodiac selector (covers horse / monkey / chicken / pig / etc.)
@@ -158,10 +195,27 @@ selected_patterns = st.sidebar.multiselect(
     default=list({"木木木", "木木土"})
 )
 
-# Generate rows using logic module
-rows = generate_rows(by_strokes, by_char, selected_patterns, zodiac_name=zodiac_name, zodiac_filter_mode=zodiac_filter_mode)
+rows = generate_rows_cached(
+    by_strokes, by_char,
+    tuple(selected_patterns),
+    zodiac_name,
+    zodiac_filter_mode,
+    max_generate
+)
 
-df = pd.DataFrame(rows)
+df = pd.DataFrame([{
+    "Name": r["Name"],
+    "Pinyin": r["Pinyin"],
+    "PatternComputed": r["PatternComputed"],
+    "DestinyTotal": r["DestinyTotal"],
+    "DestinyElement": r["DestinyElement"],
+    "PatternCalc": r["PatternCalc"],
+    "PatternMeaning_EN": r.get("PatternMeaning_EN", ""),
+    "PatternMeaning_ZH": r.get("PatternMeaning_ZH", ""),
+    "DestinyMeaning_EN": r.get("DestinyMeaning_EN", ""),
+    "DestinyMeaning_ZH": r.get("DestinyMeaning_ZH", ""),
+} for r in rows])
+
 df = df.drop_duplicates(subset=["Name", "Pinyin", "PatternComputed", "DestinyTotal"]).reset_index(drop=True)
 df["_c1"] = df["Name"].str[0]
 df["_c2"] = df["Name"].str[1]
@@ -213,7 +267,33 @@ with st.expander("📋 Table view / Export"):
 st.subheader("✨ Name Cards")
 st.caption("Expand each card to see 五格, 五行組合計算, 總格數理, and each character meaning. Save names to Favorites for comparison and PDF export.")
 
-for r in df.head(limit).to_dict(orient="records"):
+# Apply the same search filter to rows (so cards match table)
+filtered_rows = rows
+if search.strip():
+    q = search.strip().lower()
+    filtered_rows = [
+        r for r in rows
+        if q in str(r.get("Name","")).lower() or q in str(r.get("Pinyin","")).lower()
+    ]
+
+# Sort rows by chars (same as df sort)
+def name_sort_key(r):
+    n = str(r.get("Name",""))
+    return (n[0] if len(n)>0 else "", n[1] if len(n)>1 else "", n[2] if len(n)>2 else "")
+
+filtered_rows = sorted(filtered_rows, key=name_sort_key)
+
+# =========================
+# PAGINATION
+# =========================
+total = len(filtered_rows)
+
+# top bar
+start, end = render_pagination_bar(total, page_size, key_prefix="top")
+for i, r in enumerate(filtered_rows[start:end], start=start):
+
+    fg = r["FiveGrids"]
+
     if lang == "English":
         title = f"{r['Name']} · {r['Pinyin']} · Total {r['DestinyTotal']} · Pattern {r['PatternComputed']}"
     elif lang == "Chinese":
@@ -224,7 +304,9 @@ for r in df.head(limit).to_dict(orient="records"):
     with st.expander(title):
         colA, colB = st.columns([1, 5])
         with colA:
-            if st.button("⭐ Save", key=f"save_{r['Name']}"):
+            st.session_state["_btn_counter"] += 1
+            btn_key = f"save_{r['Name']}_{st.session_state['_btn_counter']}"
+            if st.button("⭐ Save", key=f"save_{r['Name']}_{i}_{r.get('PatternComputed','')}_{r.get('DestinyTotal','')}"):
                 ok = add_favorite(r)
                 st.success("Saved to favorites!") if ok else st.info("Already in favorites.")
         with colB:
@@ -328,51 +410,5 @@ for r in df.head(limit).to_dict(orient="records"):
                 st.write(f"中文: {ch.get('meaning_zh','') or '—'}")
 
             st.write("")
-
-# ============================================================
-# FAVORITES
-# ============================================================
-st.divider()
-st.subheader("⭐ Favorites (Save & Compare)")
-
-if not st.session_state.favorites:
-    st.info("No favorite names yet. Save names from the cards above.\n\n尚未收藏任何名字，請在上方卡片按 ⭐ Save。")
-else:
-    fav_cols = st.columns([3, 1, 1])
-
-    with fav_cols[0]:
-        st.write(f"Saved favorites: **{len(st.session_state.favorites)}**")
-
-    with fav_cols[1]:
-        if st.button("🗑 Clear", key="clear_favs"):
-            clear_favorites()
-            st.rerun()
-
-    with fav_cols[2]:
-        pdf_lang = st.selectbox("PDF Language", ["English", "Chinese", "Both"], index=2)
-
-    fav_df = pd.DataFrame([
-        {
-            "Name": f["Name"],
-            "Pinyin": f["Pinyin"],
-            "Pattern": f["PatternComputed"],
-            "Total Strokes (總格)": f["DestinyTotal"],
-            "Element": f["DestinyElement"],
-            "天格": f["FiveGrids"]["天格"][0],
-            "人格": f["FiveGrids"]["人格"][0],
-            "地格": f["FiveGrids"]["地格"][0],
-            "總格": f["FiveGrids"]["總格"][0],
-        }
-        for f in st.session_state.favorites
-    ])
-    st.dataframe(fav_df)
-
-    st.markdown("#### Remove an item | 刪除單項")
-    rm_name = st.selectbox("Select name to remove", [f["Name"] for f in st.session_state.favorites])
-    if st.button("Remove selected", key="rm_btn"):
-        remove_favorite(rm_name)
-        st.rerun()
-
-    st.markdown("#### 📄 Export PDF | 輸出PDF")
-    pdf_data = generate_pdf(st.session_state.favorites, lang_mode=pdf_lang)
-    st.download_button("📄 Download Favorites PDF", data=pdf_data, file_name="Name_Analysis_Report.pdf", mime="application/pdf")
+            
+render_pagination_bar(total, page_size, key_prefix="bottom")

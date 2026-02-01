@@ -1,3 +1,4 @@
+import streamlit as st
 from openpyxl import load_workbook
 from itertools import product
 from typing import Dict, List, Tuple, Any, Optional
@@ -209,6 +210,7 @@ def generate_rows(
     selected_patterns: List[str],
     zodiac_name: str = "None",
     zodiac_filter_mode: str = "OFF",
+    max_rows: int | None = None, 
 ) -> List[dict]:
     rows = []
     for pattern_key in selected_patterns:
@@ -225,4 +227,16 @@ def generate_rows(
                 )
                 if r:
                     rows.append(r)
+                    if max_rows is not None and len(rows) >= max_rows:
+                        return rows
     return rows
+
+@st.cache_data(show_spinner=False)
+def generate_rows_cached(by_strokes, by_char, selected_patterns, zodiac_name, zodiac_filter_mode, max_rows):
+    # by_strokes/by_char are dicts (pickleable) → cache works
+    return generate_rows(
+        by_strokes, by_char, selected_patterns,
+        zodiac_name=zodiac_name,
+        zodiac_filter_mode=zodiac_filter_mode,
+        max_rows=max_rows,
+    )
